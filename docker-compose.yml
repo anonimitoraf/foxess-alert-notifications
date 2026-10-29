@@ -1,0 +1,49 @@
+services:
+  foxess-alerts:
+    build:
+      context: .
+      args:
+        # Set WITH_BROWSER=true (and FOXESS_MODE=browser) for the Chromium fallback.
+        WITH_BROWSER: ${WITH_BROWSER:-false}
+    image: foxess-alert-notifications:latest
+    container_name: foxess-alerts
+    restart: unless-stopped
+    env_file:
+      # Optional so `docker compose up` still works when everything is exported
+      # in the shell instead of a .env file.
+      - path: .env
+        required: false
+    environment:
+      # Persisted volume paths (see the Dockerfile defaults).
+      STATE_FILE: /data/state.json
+      SESSION_FILE: /data/session.json
+      TZ: ${TZ:-UTC}
+    volumes:
+      - foxess-data:/data
+    # Only needed by the browser fallback: Chromium wants more than 64MB of /dev/shm.
+    shm_size: 512mb
+    # A check can take a couple of minutes (nav + retries); give it room to
+    # finish and persist state instead of being SIGKILLed mid-run.
+    stop_grace_period: 120s
+    # The health endpoint is only reachable from inside the container network.
+    # Publish it if you want to monitor the worker from the host.
+    # ports:
+    #   - "8080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:'+(process.env.HEALTH_PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 60s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  foxess-data:
